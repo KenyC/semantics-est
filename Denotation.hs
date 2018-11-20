@@ -5,6 +5,7 @@ module Denotation where
 import qualified Data.Map as Map
 import Control.Applicative
 import Grammar
+import NonFunctional
 
 -- ######################################################################
 -- MODEL 
@@ -12,6 +13,7 @@ import Grammar
 -- define denotations of lexical items
 
 -- HELPER FUNCTIONS & CLASSES
+
 
 -- from a list of individuals to a predicate
 listToPred :: (Eq a) => [a] -> a -> T
@@ -36,7 +38,7 @@ inDom :: (Domain a) => a -> T
 inDom = (`elem` domain)
 
 instance Domain D where
-    domain = [1 .. 200]
+    domain = filter (\x -> x `mod` 10 == 0) [0 .. 200]
 
 
 
@@ -44,11 +46,9 @@ instance Domain D where
 -- PREDICATES
 
 --et
-_ind = ["Lara", "Indiana", "Drake"]
 ind :: Context (E -> T)
 ind = pure $ listToPred _ind
 
-_tomb = ["Xerxes", "Akhenaten", "Sargon"]
 tomb :: Context (E -> T)
 tomb = pure $ listToPred _tomb
 
@@ -58,13 +58,15 @@ instance Domain E where
     domain = domainE
 
 -- edt
-_big :: Map.Map E D
-_big = Map.fromList [("Xerxes", 50), ("Akhenaten", 40), ("Sargon", 60)]
 big :: Context (D -> E -> T)
 big = pure $ mapToDeg _big
 
 -- edet
 -- Here, I simplify somewhat and assume that "excavate" take the time degree as an argument directly ; that avoids having to deal with yet another indefinite
+
+excavate :: Context (E -> D -> E -> T)
+excavate = pure $ \obj time subj -> any (\(s,ob,tm2) -> (s == subj) && (obj == ob) && (time >= tm2)) _excavate
+
 
 -- *TODO*
 
@@ -82,18 +84,28 @@ _forall f g = all (\x -> not (f x) || (g x)) domain
 forall = pure _forall
 
 -- a synonym for exists for a more transparent object language
-some :: (Domain a) => Context ((a -> T) -> (a -> T) -> T)
-some = exists
+an :: Context ((E -> T) -> (E -> T) -> T)
+an = exists
 
 
 -- SUPERLATIVE
 
 -- superlative takes scope below the subject ; has a covert domain restriction 
-_est :: (E -> T) -> (D -> E -> T) -> (E -> T)
+{-_est :: (E -> T) -> (D -> E -> T) -> (E -> T)
 _est covert degP x = _exists  (inDom) (best)
                 where best d = (degP d x) && _forall (\x1 -> x1/= x && (covert x1)) (\x1 -> not (degP d x1))
 est :: (E -> T) -> Context ((D -> E -> T) -> (E -> T))
+est = pure <$> _est-}
+
+-- comment the above and uncomment the below for the inclusion superlative semantics:
+-- -est_C p asserts all other alternatives are included in the prejacent.
+_est :: (E -> T) -> (D -> E -> T) -> (E -> T)
+_est covert degP x = _forall (/= x) included
+                where included y = _forall (\d -> degP d y) (\d -> degP d x)
+est :: (E -> T) -> Context ((D -> E -> T) -> (E -> T))
 est = pure <$> _est
+
+
 
 -- one useful superlative
 estInds :: Context ((D -> E -> T) -> (E -> T))
@@ -109,12 +121,6 @@ estInds = est (value ind)
 -- SENTENCE 1 
 -- Sentence "Akhenaten is 30L-big"
 -- Prediction : true -> "at least" semantics for degrees
-
--- helper denotation
-akh :: Context E
-akh = pure "Akhenaten" -- lift the individual to a contextual type
-l30 :: Context D
-l30 = pure 30 
 
 
 
@@ -167,9 +173,6 @@ sentence2 = akh <^>
 -- Sentence "Sargon is the biggest tomb"
 -- Prediction : true 
 
--- helper denotation
-sarg :: Context E
-sarg = pure "Sargon"
 
 {-LF : 
 
@@ -195,3 +198,92 @@ sentence3 = sarg <^>
                         )
                     )
                 )
+
+-- SENTENCE 4
+-- Sentence "Lara excavated the biggest tomb in the shortest time"
+-- Prediction : true 
+
+{-LF : 
+
+[ Lara
+    [ est(inds)
+        [ lambda_d
+            [ est(inds)
+                [ lambda_d'
+                    [ lambda_x 
+                        [.alpha
+                            [.gamma a 
+                                [ [d big] tomb]
+                            ]
+                            
+                            [ lambda y
+                               [.beta x
+                                    [
+                                        [ excavated y
+                                        d'
+-}
+
+beta :: Context T
+beta = (varInd $ Index "x")
+            <^>
+            (
+                (excavate <^> (varInd $ Index "y"))
+                <^>
+                (varDeg $ Index "d2")
+            )
+
+gamma :: Context ((E -> T) -> T)   
+gamma = an <^>
+            (
+                ((varDeg $ Index "d1") <^> big)
+                <^>
+                tomb
+            )
+
+alpha :: Context T
+alpha = gamma
+        <^>
+            (
+                (bind_e "y")
+                <^>
+                beta
+            )
+sentence4 :: Context T
+sentence4 = lara
+            <^>
+                (
+                estInds
+                <^>
+                    (
+                    (bind_d "d1")
+                    <^>
+                        (
+                        estInds
+                        <^>
+                            (
+                            (bind_d "d2")
+                            <^>
+                                (
+                                (bind_e "x")
+                                <^>
+                                alpha
+                                )
+                            )
+                        )
+                    )
+                )
+{-sentence3 = sarg <^>
+                (
+                    estT
+                    <^>
+                    (
+                        (bind_d "deg")
+                        <^>
+                        (
+                            ((varDeg $ Index "deg") <^> big)
+                            <^>
+                            tomb
+                        )
+                    )
+                )-}
+
